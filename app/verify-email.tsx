@@ -20,8 +20,10 @@ import Toast from 'react-native-toast-message';
 import { useAppDispatch } from '@/store/hooks';
 import { loginUser } from '@/store/slices/authSlice';
 import {
+  resendPasswordResetCode,
   resendRegistrationCode,
   toMobileUser,
+  verifyPasswordResetCode,
   verifyRegistration,
 } from '@/utils/backendApi';
 
@@ -99,19 +101,26 @@ export default function VerifyEmailScreen() {
     setIsLoading(true);
 
     if (mode === 'reset') {
-      setTimeout(() => {
-        setIsLoading(false);
+      try {
+        await verifyPasswordResetCode(email || '', fullCode);
         Toast.show({
           type: 'success',
-          text1: 'Email Verified',
-          text2: 'Your email address has been successfully verified.',
+          text1: 'Code Verified',
+          text2: 'You can now choose a new password.',
         });
-
         router.push({
           pathname: '/reset-password',
           params: email ? { email } : undefined,
         });
-      }, 600);
+      } catch (error) {
+        Toast.show({
+          type: 'error',
+          text1: 'Verification Failed',
+          text2: error instanceof Error ? error.message : 'Please try again.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
@@ -146,7 +155,8 @@ export default function VerifyEmailScreen() {
     setIsResending(true);
 
     try {
-      if (mode !== 'reset') await resendRegistrationCode(email || '');
+      if (mode === 'reset') await resendPasswordResetCode(email || '');
+      else await resendRegistrationCode(email || '');
       setIsResending(false);
       setCountdown(30);
       Toast.show({

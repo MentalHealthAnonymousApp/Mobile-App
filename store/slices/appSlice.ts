@@ -1,6 +1,5 @@
 import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/toolkit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { HistoryEntry } from '@/types';
 
 const STORAGE_KEY = 'mha_mobile_app_state_v1';
 
@@ -8,14 +7,12 @@ export interface AppState {
   isHydrated: boolean;
   onboardingComplete: boolean;
   notificationsEnabled: boolean;
-  history: HistoryEntry[];
 }
 
 const initialState: AppState = {
   isHydrated: false,
   onboardingComplete: false,
   notificationsEnabled: true,
-  history: [],
 };
 
 export const loadPersistedAppState = createAsyncThunk(
@@ -38,7 +35,6 @@ export const saveAppStateToStorage = async (state: AppState) => {
     const dataToSave = {
       onboardingComplete: state.onboardingComplete,
       notificationsEnabled: state.notificationsEnabled,
-      history: state.history,
     };
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
   } catch (error) {
@@ -62,14 +58,6 @@ export const appSlice = createSlice({
       state.notificationsEnabled = action.payload;
       saveAppStateToStorage(state);
     },
-    addHistoryEntry: (state, action: PayloadAction<HistoryEntry>) => {
-      state.history = [action.payload, ...state.history].slice(0, 50);
-      saveAppStateToStorage(state);
-    },
-    clearHistory: (state) => {
-      state.history = [];
-      saveAppStateToStorage(state);
-    },
   },
   extraReducers: (builder) => {
     builder.addCase(loadPersistedAppState.fulfilled, (state, action) => {
@@ -79,9 +67,6 @@ export const appSlice = createSlice({
         }
         if (typeof action.payload.notificationsEnabled === 'boolean') {
           state.notificationsEnabled = action.payload.notificationsEnabled;
-        }
-        if (Array.isArray(action.payload.history)) {
-          state.history = action.payload.history;
         }
       }
       state.isHydrated = true;
@@ -96,8 +81,6 @@ export const {
   completeOnboarding,
   resetOnboarding,
   setNotificationsEnabled,
-  addHistoryEntry,
-  clearHistory,
 } = appSlice.actions;
 
 export default appSlice.reducer;

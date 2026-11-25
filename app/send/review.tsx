@@ -3,9 +3,7 @@ import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { addHistoryEntry } from '@/store/slices/appSlice';
-import { addDispatchToAccount } from '@/store/slices/authSlice';
-import { resetShareFlow } from '@/store/slices/shareSlice';
+import { resetShareFlow, setCredit } from '@/store/slices/shareSlice';
 import { useCreateAnonymousShareMutation } from '@/store/api/baseApi';
 import Toast from 'react-native-toast-message';
 import { ScreenWrapper } from '@/components/ui/layouts/ScreenWrapper';
@@ -16,6 +14,7 @@ import { PrivacyNotice } from '@/components/ui/shared/PrivacyNotice';
 import { TopicIcon } from '@/components/topic/TopicIcon';
 import { maskEmail, maskPhone } from '@/utils/mask';
 import { createIdempotencyKey } from '@/utils/backendApi';
+import { getApiErrorStatus } from '@/utils/format';
 
 function ReviewRow({
   label,
@@ -66,9 +65,10 @@ function getSendErrorMessage(error: unknown): string {
 export default function ReviewScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { selectedTopic, selectedArticles, recipient, message } = useAppSelector(
+  const { selectedTopic, selectedArticles, recipient, message, credit } = useAppSelector(
     (state) => state.share
   );
+  const attachedArticles = credit?.packageTier === 'basic' ? [] : selectedArticles;
 
   const { user, isAuthenticated } = useAppSelector((state) => state.auth);
 
@@ -112,6 +112,16 @@ export default function ReviewScreen() {
       return;
     }
 
+    if (!credit) {
+      Toast.show({
+        type: 'info',
+        text1: 'Package Required',
+        text2: 'Choose a package or use an unused credit to send this message.',
+      });
+      router.push('/packages');
+      return;
+    }
+
     try {
       const result = await createShare({
         topic: selectedTopic.apiId || selectedTopic.slug || selectedTopic.id,
@@ -120,34 +130,11 @@ export default function ReviewScreen() {
         recipientPhone: recipient.method === 'SMS' ? rawRecipient : undefined,
         recipientName: recipient.name,
         customNote: message || undefined,
-        articles: selectedArticles.map((article) => article.id),
+        articles: attachedArticles.map((article) => article.id),
         senderAttestation: true,
+        packagePurchaseId: credit.purchaseId,
         idempotencyKey: (idempotencyKey.current ??= createIdempotencyKey()),
       }).unwrap();
-
-      const newHistoryEntry = {
-        id: result.messageId,
-        userId: user.id,
-        userEmail: user.email,
-        topicId: selectedTopic.id,
-        topicName: selectedTopic.name,
-        articles: selectedArticles,
-        method: recipient.method,
-        maskedRecipient,
-        sentAt: new Date().toISOString(),
-        status: result.status,
-      };
-
-      // Add to account dispatches
-      dispatch(
-        addDispatchToAccount({
-          userId: user.id,
-          entry: newHistoryEntry,
-        })
-      );
-
-      // Add to app history
-      dispatch(addHistoryEntry(newHistoryEntry));
 
       const topicName = selectedTopic.name;
       const method = recipient.method;
@@ -157,10 +144,13 @@ export default function ReviewScreen() {
 
       router.replace({
         pathname: '/send/success',
-        params: { topicName, method },
+        params: { topicName, method, status: result.status },
       });
-    } catch {
-      // Error handled by RTK mutation state
+    } catch (sendError) {
+      // 402: this credit was already used or is no longer valid, so pick another.
+      if (getApiErrorStatus(sendError) === 402) {
+        dispatch(setCredit(null));
+      }
     }
   };
 
@@ -201,17 +191,30 @@ export default function ReviewScreen() {
           onEdit={() => router.push('/(tabs)/home')}
         />
 
+        <ReviewRow
+          label="Package credit"
+          value={
+            <Text className={`text-[15px] font-medium ${credit ? 'text-ink' : 'text-danger'}`}>
+              {credit
+                ? `${credit.packageTier.charAt(0).toUpperCase()}${credit.packageTier.slice(1)} package`
+                : 'No package selected'}
+            </Text>
+          }
+          editAccessibilityLabel="Change package"
+          onEdit={() => router.push('/packages')}
+        />
+
         {/* Selected Educational Articles & Web Links */}
         <ReviewRow
-          label={`Articles & Web Links (${selectedArticles.length})`}
+          label={`Articles & Web Links (${attachedArticles.length})`}
           value={
             <View className="gap-2 mt-0.5">
-              {selectedArticles.length === 0 ? (
+              {attachedArticles.length === 0 ? (
                 <Text className="text-[13px] text-ink-tertiary">
                   Standard educational packet
                 </Text>
               ) : (
-                selectedArticles.map((art) => (
+                attachedArticles.map((art) => (
                   <View
                     key={art.id}
                     className="rounded-xl bg-canvas p-2.5 border border-line/60">
@@ -328,7 +331,7 @@ export default function ReviewScreen() {
           )}
         </View>
         <Text className="flex-1 text-[13.5px] leading-5 text-ink-secondary">
-          I confirm I have a good-faith reason to contact this person and this message is supportive, not threatening or harassing. I understand the message sends immediately, my identity is not shown to the recipient, and recipient contact details and message content are stored in service records. These resources are educational and not professional medical advice.
+          I confirm I have a good-faith reason to contact this person and this message is supportive, not threatening or harassing. I understand this uses one package credit, the message is reviewed by our team before it is sent (usually within 3 days), my identity is not shown to the recipient, and recipient contact details and message content are stored in service records. These resources are educational and not professional medical advice.
         </Text>
       </TouchableOpacity>
 

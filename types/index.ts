@@ -37,7 +37,7 @@ export interface Article {
 
 export type DeliveryMethod = 'EMAIL' | 'SMS';
 
-export type ShareStatus = 'SENT' | 'QUEUED' | 'FAILED';
+export type ShareStatus = 'PENDING_REVIEW' | 'QUEUED' | 'SENT' | 'FAILED' | 'REJECTED';
 
 export interface Recipient {
   method: DeliveryMethod;
@@ -56,6 +56,7 @@ export interface CreateSharePayload {
   customNote?: string;
   articles: string[];
   senderAttestation: true;
+  packagePurchaseId: string;
   idempotencyKey: string;
 }
 
@@ -86,6 +87,7 @@ export interface HistoryEntry {
   sentAt: string;
   formattedDate?: string;
   status: ShareStatus;
+  rejectionReason?: string;
 }
 
 export interface PackageTier {
@@ -99,4 +101,55 @@ export interface PackageTier {
   description: string;
   features: string[];
   ctaLabel: string;
+}
+
+export type PackageTierId = 'basic' | 'standard' | 'premium';
+
+export interface PackagePrice {
+  tier: PackageTierId;
+  available: boolean;
+  amountMinor: number | null;
+  currency: string | null;
+}
+
+/** A paid package that has not been used to send a message yet. */
+export interface PackageCredit {
+  purchaseId: string;
+  packageTier: PackageTierId;
+  paidAt?: string;
+}
+
+export interface CheckoutSessionResult {
+  checkoutUrl: string;
+  sessionId: string;
+}
+
+export interface CheckoutStatus {
+  purchaseId: string;
+  packageTier: PackageTierId;
+  amountMinor: number;
+  currency: string;
+  status: 'pending' | 'completed' | 'failed' | 'canceled' | 'refunded' | 'partially_refunded' | 'disputed';
+  fulfillmentStatus: 'pending' | 'fulfilled' | 'failed';
+  messageId?: string;
+}
+
+export interface CommunityPostItem {
+  id: string;
+  author: string;
+  title: string;
+  content: string;
+  category: string;
+  imageUrl?: string;
+  createdAt?: string;
+  likes: number;
+  repliesCount: number;
+  isPinned?: boolean;
+}
+
+export interface CommunityReplyItem {
+  id: string;
+  author: string;
+  content: string;
+  createdAt?: string;
 }

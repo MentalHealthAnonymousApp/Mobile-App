@@ -12,7 +12,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { PACKAGES } from '@/data/packages';
 import { APP_VIDEO_CONFIG } from '@/data/videoConfig';
 import { PrivacyNotice } from '@/components/ui/shared/PrivacyNotice';
-import type { PackageTier } from '@/types';
+import { PackageCard } from '@/components/package/PackageCard';
+import { useGetPackagePricesQuery } from '@/store/api/baseApi';
+import { formatPrice } from '@/utils/format';
 
 const TOTAL_DURATION_SECONDS = 102; // 1 min 42 sec
 
@@ -88,9 +90,7 @@ export default function HomeScreen() {
 
   const progressPercent = (currentTime / TOTAL_DURATION_SECONDS) * 100;
 
-  const handleSelectPackage = (pkg: PackageTier) => {
-    router.push('/(tabs)/topics');
-  };
+  const { data: prices } = useGetPackagePricesQuery();
 
   return (
     <SafeAreaView edges={['top']} className="flex-1 bg-canvas">
@@ -333,94 +333,19 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Package Cards List (Fully Responsive) */}
           <View className="w-full gap-3.5">
-            {PACKAGES.map((pkg) => (
-              <View
-                key={pkg.id}
-                className={`w-full rounded-2xl border p-4 shadow-xs ${pkg.popular
-                  ? 'border-forest bg-mist/20 ring-1 ring-forest'
-                  : 'border-line bg-canvas'
-                  }`}>
-
-                {/* Responsive Header (Top Row: Badge, Title & Price) */}
-                <View className="w-full">
-                  {pkg.badge && (
-                    <View className="self-start mb-2">
-                      <View
-                        className={`rounded-full px-2.5 py-0.5 ${pkg.popular ? 'bg-primary' : 'bg-line'
-                          }`}>
-                        <Text
-                          className={`text-[9.5px] font-bold uppercase tracking-wider ${pkg.popular ? 'text-white' : 'text-ink-secondary'
-                            }`}>
-                          {pkg.badge}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  <View className="w-full flex-row items-baseline justify-between gap-2">
-                    <View className="flex-1 pr-2">
-                      <Text className="text-[17px] font-bold text-ink leading-snug">
-                        {pkg.name}
-                      </Text>
-                      <Text className="mt-0.5 text-[12px] text-ink-secondary leading-snug">
-                        {pkg.tagline}
-                      </Text>
-                    </View>
-
-                    <View className="items-end shrink-0">
-                      <Text className="text-[22px] font-bold text-ink leading-tight">
-                        ${pkg.price}
-                      </Text>
-                      <Text className="text-[10px] font-medium text-ink-tertiary">
-                        USD · One-Time
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* Features List */}
-                <View className="mt-3.5 w-full border-t border-line/60 pt-3 gap-2">
-                  {pkg.features.map((feat, idx) => (
-                    <View key={idx} className="w-full flex-row items-start gap-2">
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={15}
-                        color="#2E5E52"
-                        style={{ marginTop: 1 }}
-                      />
-                      <Text className="flex-1 text-[12px] leading-snug text-ink-secondary">
-                        {feat}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* Purchase / Select Button */}
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => handleSelectPackage(pkg)}
-                  style={{
-                    backgroundColor: pkg.popular ? '#2E5E52' : '#FFFFFF',
-                    borderColor: pkg.popular ? '#2E5E52' : '#E6E9E2',
-                    borderWidth: 1,
-                  }}
-                  className="mt-4 w-full flex-row items-center justify-center rounded-xl py-3.5 px-3 shadow-xs active:opacity-90">
-                  <Text
-                    style={{ color: pkg.popular ? '#FFFFFF' : '#18231F' }}
-                    className="text-[13.5px] font-bold">
-                    {pkg.ctaLabel}
-                  </Text>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={14}
-                    color={pkg.popular ? '#FFFFFF' : '#2E5E52'}
-                    style={{ marginLeft: 6 }}
-                  />
-                </TouchableOpacity>
-              </View>
-            ))}
+            {PACKAGES.map((pkg) => {
+              const livePrice = prices?.find((price) => price.tier === pkg.id);
+              return (
+                <PackageCard
+                  key={pkg.id}
+                  pkg={pkg}
+                  priceLabel={formatPrice(livePrice?.amountMinor, livePrice?.currency)}
+                  available={livePrice ? livePrice.available : true}
+                  onSelect={() => router.push('/packages')}
+                />
+              );
+            })}
           </View>
         </View>
 

@@ -8,12 +8,14 @@ import { PrivacyNotice } from '@/components/ui/shared/PrivacyNotice';
 
 export default function SuccessScreen() {
   const router = useRouter();
-  const { topicName, method } = useLocalSearchParams<{
+  const { topicName, method, status } = useLocalSearchParams<{
     topicName?: string;
     method?: string;
+    status?: string;
   }>();
 
   const channel = method === 'SMS' ? 'text message' : 'email';
+  const inReview = status === 'PENDING_REVIEW';
 
   return (
     <SafeAreaView className="flex-1 bg-canvas px-6 pb-8 pt-6 justify-between">
@@ -23,12 +25,13 @@ export default function SuccessScreen() {
         </View>
 
         <Text className="mt-8 text-[26px] font-semibold text-ink text-center">
-          Message accepted for delivery
+          {inReview ? 'Message submitted for review' : 'Message accepted for delivery'}
         </Text>
 
         <Text className="mt-3 max-w-[300px] text-center text-[15px] leading-6 text-ink-secondary">
-          {topicName ? `Your ${topicName} message was accepted. ` : ''}
-          The delivery provider accepted it for {channel}. Final delivery depends on the recipient’s email provider or mobile carrier.
+          {inReview
+            ? `${topicName ? `Your ${topicName} message was received. ` : ''}Our team reviews every message before it is sent by ${channel}, usually within 3 days. If it can’t be approved, your package credit is returned.`
+            : `${topicName ? `Your ${topicName} message was accepted. ` : ''}The delivery provider accepted it for ${channel}. Final delivery depends on the recipient’s email provider or mobile carrier.`}
         </Text>
 
         <PrivacyNotice className="mt-8 justify-center" tone="soft" icon="lock">

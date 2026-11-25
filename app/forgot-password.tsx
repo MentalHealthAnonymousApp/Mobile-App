@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppButton } from '@/components/ui/shared/AppButton';
 import Toast from 'react-native-toast-message';
+import { requestPasswordReset } from '@/utils/backendApi';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -25,7 +26,7 @@ export default function ForgotPasswordScreen() {
   const [error, setError] = useState<string | undefined>();
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (isLoading) return;
     const normalizedEmail = email.trim().toLowerCase();
 
@@ -45,22 +46,26 @@ export default function ForgotPasswordScreen() {
     Keyboard.dismiss();
     setIsLoading(true);
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      await requestPasswordReset(normalizedEmail);
       Toast.show({
         type: 'success',
         text1: 'Verification Code Sent',
-        text2: `A 6-digit OTP has been sent to ${normalizedEmail}.`,
+        text2: `A 6-digit code has been sent to ${normalizedEmail}.`,
       });
-
       router.push({
         pathname: '/verify-email',
-        params: {
-          email: normalizedEmail,
-          mode: 'reset',
-        },
+        params: { email: normalizedEmail, mode: 'reset' },
       });
-    }, 600);
+    } catch (resetError) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could Not Send Code',
+        text2: resetError instanceof Error ? resetError.message : 'Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

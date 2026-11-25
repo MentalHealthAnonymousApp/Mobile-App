@@ -32,6 +32,8 @@ export default function TopicDetailScreen() {
     (state) => state.share.selectedArticles
   );
   const isAuthenticated = useAppSelector((state) => state.auth.isAuthenticated);
+  const credit = useAppSelector((state) => state.share.credit);
+  const isBasic = credit?.packageTier === 'basic';
 
   const { data: topic, isLoading, isError, refetch } = useGetTopicByIdQuery(id || '', {
     skip: !id,
@@ -47,7 +49,7 @@ export default function TopicDetailScreen() {
   );
 
   useEffect(() => {
-    if (topic && articles.length > 0) {
+    if (topic && articles.length > 0 && !isBasic) {
       dispatch(setSelectedTopic(topic));
       const isCurrentTopicSelected = selectedArticles.some(
         (a) => a.topicId === topic.id
@@ -56,7 +58,7 @@ export default function TopicDetailScreen() {
         dispatch(setSelectedArticles(articles.slice(0, 5)));
       }
     }
-  }, [topic, articles, dispatch]);
+  }, [topic, articles, dispatch, isBasic]);
 
   useEffect(() => {
     if (topic) dispatch(setSelectedTopic(topic));
@@ -115,7 +117,7 @@ export default function TopicDetailScreen() {
   };
 
   const handleSend = () => {
-    if (areArticlesLoading || didArticlesFail) return;
+    if (!isBasic && (areArticlesLoading || didArticlesFail)) return;
     if (!isAuthenticated) {
       Toast.show({
         type: 'info',
@@ -124,11 +126,12 @@ export default function TopicDetailScreen() {
       });
       router.push({
         pathname: '/login',
-        params: { redirect: '/send/recipient' },
+        params: { redirect: credit ? '/send/recipient' : '/packages' },
       });
       return;
     }
-    router.push('/send/recipient');
+    // Every message uses one paid package credit.
+    router.push(credit ? '/send/recipient' : '/packages');
   };
 
   return (
@@ -138,7 +141,7 @@ export default function TopicDetailScreen() {
         <View className="gap-3">
           <AppButton
             onPress={handleSend}
-            disabled={areArticlesLoading || didArticlesFail}>
+            disabled={!isBasic && (areArticlesLoading || didArticlesFail)}>
             {selectedArticles.length > 0
               ? `Send this resource (${selectedArticles.length} article${
                   selectedArticles.length === 1 ? '' : 's'
@@ -187,6 +190,13 @@ export default function TopicDetailScreen() {
       </AppCard>
 
       {/* Dynamic Search & Multi-Select Articles Component */}
+      {isBasic ? (
+        <AppCard className="mt-6">
+          <Text className="text-[13.5px] leading-5 text-ink-secondary">
+            Resource attachments are not included with the Basic package. Continue to enter the recipient.
+          </Text>
+        </AppCard>
+      ) : (
       <ArticleSelector
         articles={articles}
         isLoading={areArticlesLoading}
@@ -195,7 +205,8 @@ export default function TopicDetailScreen() {
         onSelectAll={handleSelectAll}
         onClearAll={handleClearAll}
       />
-      {didArticlesFail && (
+      )}
+      {didArticlesFail && !isBasic && (
         <TouchableOpacity
           onPress={() => void refetchArticles()}
           className="mt-3 rounded-xl border border-danger/30 bg-danger-soft p-3">

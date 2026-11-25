@@ -4,31 +4,42 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Image,
   Platform,
   StyleSheet,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppSelector } from '@/store/hooks';
-import { mockHistoryEntries } from '@/data/historyData';
 import { formatSentDate } from '@/utils/format';
+import { useGetMyMessagesQuery } from '@/store/api/baseApi';
+import { AppButton } from '@/components/ui/shared/AppButton';
+import { EmptyState, ErrorState } from '@/components/ui/shared/States';
+import type { ShareStatus } from '@/types';
+
+const STATUS_DISPLAY: Record<ShareStatus, { label: string; icon: keyof typeof Ionicons.glyphMap; ok: boolean }> = {
+  PENDING_REVIEW: { label: 'In review', icon: 'time-outline', ok: true },
+  QUEUED: { label: 'Sending', icon: 'paper-plane-outline', ok: true },
+  SENT: { label: 'Delivered', icon: 'checkmark-circle-outline', ok: true },
+  FAILED: { label: 'Failed', icon: 'close-circle-outline', ok: false },
+  REJECTED: { label: 'Not approved', icon: 'close-circle-outline', ok: false },
+};
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const { user, isAuthenticated, accountHistories } = useAppSelector(
-    (state) => state.auth
-  );
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
+  const {
+    data: userDispatches = [],
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useGetMyMessagesQuery(undefined, { skip: !isAuthenticated });
 
-  // User dispatches or fallback to JSON data
-  const userDispatches =
-    user && accountHistories[user.id] && accountHistories[user.id].length > 0
-      ? accountHistories[user.id]
-      : mockHistoryEntries;
-
-  const displayName = user?.name || 'Sarah Jenkins';
-  const displayEmail = user?.email || 'sarah.jenkins@example.com';
+  const displayName = user?.name || 'Member';
+  const displayEmail = user?.email || '';
   const dispatchCount = userDispatches.length;
 
   const handleGoBack = () => {
@@ -53,19 +64,48 @@ export default function HistoryScreen() {
         <View style={styles.headerPlaceholder} />
       </View>
 
+      {!isAuthenticated ? (
+        <View style={styles.centerState}>
+          <EmptyState
+            title="Sign in to see your history"
+            description="Messages you send from your account appear here with their review and delivery status."
+          />
+          <AppButton onPress={() => router.push({ pathname: '/login', params: { redirect: '/history' } })}>
+            Sign in
+          </AppButton>
+        </View>
+      ) : isLoading ? (
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color="#2E5E52" />
+        </View>
+      ) : isError ? (
+        <View style={styles.centerState}>
+          <ErrorState
+            title="History unavailable"
+            description="Your send history could not be loaded."
+            onRetry={() => void refetch()}
+          />
+        </View>
+      ) : (
       <ScrollView
         contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isFetching && !isLoading}
+            onRefresh={() => { void refetch(); }}
+            tintColor="#2E5E52"
+          />
+        }>
         <View style={styles.contentContainer}>
           {/* User Profile Summary Card */}
           <View style={styles.profileCard}>
             <View style={styles.profileLeft}>
-              <Image
-                source={{
-                  uri: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-                }}
-                style={styles.avatarImage}
-              />
+              <View style={[styles.avatarImage, styles.avatarInitial]}>
+                <Text style={styles.avatarInitialText}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
               <View style={styles.profileInfo}>
                 <Text style={styles.profileName}>{displayName}</Text>
                 <Text style={styles.profileEmail}>{displayEmail}</Text>
@@ -82,17 +122,22 @@ export default function HistoryScreen() {
           {/* Timeline Section */}
           <View style={styles.timelineSection}>
             <Text style={styles.sectionTitle}>Recent Dispatches</Text>
+            {userDispatches.length === 0 && (
+              <EmptyState
+                title="No messages yet"
+                description="When you send an anonymous message, it will appear here."
+              />
+            )}
 
             <View style={styles.timelineList}>
               {userDispatches.map((entry, index) => {
                 const isLast = index === userDispatches.length - 1;
-                const isDelivered = entry.status === 'SENT';
-                const isQueued = entry.status === 'QUEUED';
-                const isAccepted = isDelivered || isQueued;
+                const display = STATUS_DISPLAY[entry.status] ?? STATUS_DISPLAY.QUEUED;
+                const isAccepted = display.ok;
                 const formattedTime =
                   entry.formattedDate || formatSentDate(entry.sentAt);
                 const extraCount =
-                  entry.extraResourcesCount ?? (entry.articles ? entry.articles.length : 2);
+                  entry.extraResourcesCount ?? entry.articles?.length ?? 0;
 
                 return (
                   <View key={entry.id} style={styles.timelineItem}>
@@ -119,11 +164,7 @@ export default function HistoryScreen() {
                               : styles.statusFailed,
                           ]}>
                           <Ionicons
-                            name={
-                              isAccepted
-                                ? 'checkmark-circle-outline'
-                                : 'close-circle-outline'
-                            }
+                            name={display.icon}
                             size={13}
                             color={isAccepted ? '#265346' : '#A9524A'}
                           />
@@ -134,7 +175,7 @@ export default function HistoryScreen() {
                                 ? styles.statusTextDelivered
                                 : styles.statusTextFailed,
                             ]}>
-                            {isDelivered ? 'Delivered' : isQueued ? 'Accepted' : 'Failed'}
+                            {display.label}
                           </Text>
                         </View>
                       </View>
@@ -147,6 +188,13 @@ export default function HistoryScreen() {
 
                       {/* Timestamp */}
                       <Text style={styles.timestampText}>{formattedTime}</Text>
+                      {entry.status === 'REJECTED' && (
+                        <Text style={styles.rejectionText}>
+                          {entry.rejectionReason
+                            ? `${entry.rejectionReason} Your package credit was returned.`
+                            : 'Your package credit was returned.'}
+                        </Text>
+                      )}
 
                       {/* Extra Resources Attached Pill */}
                       {extraCount > 0 && (
@@ -171,6 +219,7 @@ export default function HistoryScreen() {
           </View>
         </View>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -241,6 +290,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     flex: 1,
+  },
+  centerState: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 48,
+  },
+  avatarInitial: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#2E5E52',
+  },
+  rejectionText: {
+    marginTop: 6,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#A9524A',
   },
   avatarImage: {
     width: 46,

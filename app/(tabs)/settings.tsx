@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, ScrollView, Switch, TouchableOpacity, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setNotificationsEnabled } from '@/store/slices/appSlice';
-import { logoutUser, clearAccountDispatches } from '@/store/slices/authSlice';
+import { logoutUser } from '@/store/slices/authSlice';
+import { resetShareFlow } from '@/store/slices/shareSlice';
+import { baseApi } from '@/store/api/baseApi';
 import { AppCard } from '@/components/ui/shared/AppCard';
-import { AppButton } from '@/components/ui/shared/AppButton';
 import Toast from 'react-native-toast-message';
 import { useRouter } from 'expo-router';
 import { clearSessionTokens } from '@/utils/backendApi';
@@ -23,24 +24,29 @@ const staticLinks: Array<{
   { label: 'Help & Crisis Helplines', icon: 'help-buoy-outline', route: '/help' },
 ];
 
+const accountLinks: Array<{
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  route: string;
+}> = [
+  { label: 'Packages & Credits', icon: 'card-outline', route: '/packages' },
+  { label: 'Change Password', icon: 'key-outline', route: '/change-password' },
+];
+
 export default function SettingsScreen() {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const { notificationsEnabled } = useAppSelector((state) => state.app);
-  const { user, isAuthenticated, accountHistories } = useAppSelector(
-    (state) => state.auth
-  );
-
-  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
-
-  const userDispatches =
-    user && accountHistories[user.id] ? accountHistories[user.id] : [];
+  const { user, isAuthenticated } = useAppSelector((state) => state.auth);
 
   const handleLogout = () => {
     const performLogout = async () => {
       try {
         await clearSessionTokens();
         dispatch(logoutUser());
+        dispatch(resetShareFlow());
+        // Drop cached credits, history and other account data.
+        dispatch(baseApi.util.resetApiState());
         Toast.show({
           type: 'info',
           text1: 'Signed Out',
@@ -77,17 +83,6 @@ export default function SettingsScreen() {
         ]
       );
     }
-  };
-
-  const handleClearHistory = () => {
-    if (!user) return;
-    dispatch(clearAccountDispatches(user.id));
-    setIsConfirmingClear(false);
-    Toast.show({
-      type: 'success',
-      text1: 'History Cleared',
-      text2: 'Your account dispatch history has been cleared.',
-    });
   };
 
   return (
@@ -194,66 +189,24 @@ export default function SettingsScreen() {
           ))}
         </AppCard>
 
-        {/* Account History Management (If Authenticated) */}
+        {/* Account Links (If Authenticated) */}
         {isAuthenticated && user && (
-          <AppCard className="p-4">
-            <Text className="text-[15.5px] font-bold text-ink">
-              Account Dispatch History
-            </Text>
-            <Text className="mt-1 text-[12.5px] text-ink-secondary">
-              {userDispatches.length > 0
-                ? `${userDispatches.length} dispatch record${
-                    userDispatches.length === 1 ? '' : 's'
-                  } saved in your account.`
-                : 'No dispatch records in your account.'}
-            </Text>
-
-            {isConfirmingClear ? (
-              <View className="mt-3 gap-2">
-                <Text className="text-[12px] text-danger">
-                  Are you sure? This will delete the dispatch logs from your account.
-                </Text>
-                <View className="flex-row gap-2">
-                  <TouchableOpacity
-                    onPress={handleClearHistory}
-                    className="flex-1 rounded-xl bg-danger py-2.5 items-center">
-                    <Text className="text-[12.5px] font-bold text-white">
-                      Confirm Clear
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setIsConfirmingClear(false)}
-                    className="flex-1 rounded-xl border border-line bg-surface py-2.5 items-center">
-                    <Text className="text-[12.5px] font-bold text-ink">
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
+          <AppCard padded={false} className="overflow-hidden">
+            {accountLinks.map((item, index) => (
+              <TouchableOpacity
+                key={item.label}
+                activeOpacity={0.7}
+                onPress={() => router.push(item.route as any)}
+                className={`flex-row items-center justify-between p-4 ${
+                  index > 0 ? 'border-t border-line/70' : ''
+                } active:bg-elevated`}>
+                <View className="flex-row items-center gap-3 flex-1">
+                  <Ionicons name={item.icon} size={19} color="#6B7A75" />
+                  <Text className="text-[14.5px] text-ink font-medium">{item.label}</Text>
                 </View>
-              </View>
-            ) : (
-              <View className="mt-3">
-                <TouchableOpacity
-                  disabled={userDispatches.length === 0}
-                  onPress={() => setIsConfirmingClear(true)}
-                  className={`flex-row items-center justify-center rounded-xl border py-2.5 px-3 ${
-                    userDispatches.length === 0
-                      ? 'border-line bg-canvas opacity-60'
-                      : 'border-danger/30 bg-danger-soft active:opacity-80'
-                  }`}>
-                  <Ionicons
-                    name="trash-outline"
-                    size={15}
-                    color={userDispatches.length === 0 ? '#9AA5A0' : '#A9524A'}
-                  />
-                  <Text
-                    className={`ml-1.5 text-[12.5px] font-bold ${
-                      userDispatches.length === 0 ? 'text-ink-tertiary' : 'text-danger'
-                    }`}>
-                    Clear Account History
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                <Ionicons name="chevron-forward" size={17} color="#9AA5A0" />
+              </TouchableOpacity>
+            ))}
           </AppCard>
         )}
 

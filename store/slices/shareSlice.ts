@@ -1,11 +1,13 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
-import type { Article, DeliveryMethod, Recipient, Topic } from '@/types';
+import type { Article, DeliveryMethod, PackageCredit, Recipient, Topic } from '@/types';
 
 export interface ShareState {
   selectedTopic: Topic | null;
   selectedArticles: Article[];
   recipient: Recipient | null;
   message: string;
+  /** The paid package credit this message will use. */
+  credit: PackageCredit | null;
 }
 
 const initialState: ShareState = {
@@ -13,6 +15,7 @@ const initialState: ShareState = {
   selectedArticles: [],
   recipient: null,
   message: '',
+  credit: null,
 };
 
 export const shareSlice = createSlice({
@@ -54,11 +57,17 @@ export const shareSlice = createSlice({
     setMessage: (state, action: PayloadAction<string>) => {
       state.message = action.payload;
     },
+    setCredit: (state, action: PayloadAction<PackageCredit | null>) => {
+      state.credit = action.payload;
+      // The Basic package does not include resource attachments.
+      if (action.payload?.packageTier === 'basic') state.selectedArticles = [];
+    },
     resetShareFlow: (state) => {
       state.selectedTopic = null;
       state.selectedArticles = [];
       state.recipient = null;
       state.message = '';
+      state.credit = null;
     },
   },
 });
@@ -72,6 +81,7 @@ export const {
   setRecipient,
   setDeliveryMethod,
   setMessage,
+  setCredit,
   resetShareFlow,
 } = shareSlice.actions;
 

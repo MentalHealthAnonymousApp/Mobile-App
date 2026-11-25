@@ -96,7 +96,24 @@ EXPO_PUBLIC_API_BASE_URL=https://api.example.com
 EXPO_PUBLIC_WEBSITE_URL=https://mentalhealthanonymous.org
 ```
 
-The mobile app uses the backend for account registration, email verification, sign-in, published topics/resources, and authenticated message delivery. Native platforms store session tokens with Expo SecureStore; web uses AsyncStorage.
+For local development on a phone, put the Mac's LAN IP in `.env.local` (gitignored), e.g. `EXPO_PUBLIC_API_BASE_URL=http://10.10.27.224:3400`; `localhost` does not work from a device. For EAS builds set it as an EAS environment variable.
+
+The mobile app uses the backend for everything: registration, email verification, sign-in, forgot/reset/change password, topics and resources, package payments, message sending, send history (`message/my-messages`) and the community (posts, replies, likes). Native platforms store session tokens with Expo SecureStore; web uses AsyncStorage. Logging out also clears the cached API data.
+
+### Payments (Stripe, for now)
+
+Every message needs one paid package credit, the same as on the website.
+
+1. `app/packages/index.tsx` lists live prices (`package-purchase/prices`) and unused credits (`package-purchase/my-credits`). An unused credit can be used directly.
+2. Buying calls `package-purchase/checkout-session` with `returnTo: "app"`. The server returns `checkoutUrl` and `sessionId`.
+3. `app/packages/status.tsx` opens Stripe Checkout in the in-app browser (`expo-web-browser`) and polls `package-purchase/session/:sessionId` until Stripe's webhook confirms the payment. It also re-checks when the app returns to the foreground. Payment is only ever confirmed by the server, never by the app.
+4. The credit is stored in `share.credit`, and `send/review.tsx` sends it as `packagePurchaseId`. Basic credits cannot attach resources. Messages go to admin review before delivery.
+
+With `returnTo: "app"`, Stripe returns to the website's `/packages/success?source=app` or `/packages?checkout=cancelled&source=app`, which only tell the person to close the window. Deploy the website so those pages exist in production.
+
+**Pending:** Apple App Store / Google Play in-app purchases. The server already has `billingProvider` values `apple_app_store` and `google_play`; it needs receipt-verification endpoints, and the app needs an IAP library (e.g. `react-native-iap`, which requires a development build, not Expo Go). App Store review may reject Stripe checkout for digital goods on iOS, so plan IAP before submitting to the App Store.
+
+**Known gaps:** community posts accept an image URL only (the API has no image upload); Help still uses `mailto:` rather than the `support/contact` endpoint.
 
 ### 1. Install Dependencies
 ```bash

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,80 +9,118 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
 import { useAppSelector } from '@/store/hooks';
+import { ALL_DISCUSSIONS, communityCategories, postCategories } from '@/data/community';
 import {
-  seedCommunityPosts,
-  type CommunityPost,
-  type CommunityReply,
-} from '@/data/community';
+  useCreateCommunityPostMutation,
+  useCreateCommunityReplyMutation,
+  useGetCommunityPostsQuery,
+  useGetCommunityRepliesQuery,
+  useToggleCommunityLikeMutation,
+} from '@/store/api/baseApi';
 import { AppCard } from '@/components/ui/shared/AppCard';
 import { AppButton } from '@/components/ui/shared/AppButton';
+import { getApiErrorMessage } from '@/utils/format';
 import Toast from 'react-native-toast-message';
 
-const STORAGE_COMMUNITY_KEY = 'mha_mobile_community_posts_v3';
+function formatPostDate(value?: string): string {
+  if (!value) return 'Recently';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Recently'
+    : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function PostReplies({ postId }: { postId: string }) {
+  const { data: replies = [], isLoading, isError, refetch } = useGetCommunityRepliesQuery(postId);
+
+  if (isLoading) {
+    return <ActivityIndicator size="small" color="#2E5E52" style={{ marginBottom: 12 }} />;
+  }
+  if (isError) {
+    return (
+      <TouchableOpacity onPress={() => void refetch()} className="mb-3">
+        <Text className="text-[12px] font-medium text-danger">
+          Replies could not be loaded. Tap to try again.
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+  if (replies.length === 0) return null;
+
+  return (
+    <View className="gap-2.5 mb-3">
+      {replies.map((rep) => (
+        <View key={rep.id} className="rounded-2xl bg-canvas border border-line/70 p-3">
+          <View className="flex-row items-center justify-between">
+            <Text className="text-[12px] font-bold text-ink">
+              {rep.author}
+            </Text>
+            <Text className="text-[10px] text-ink-tertiary">{formatPostDate(rep.createdAt)}</Text>
+          </View>
+          <Text className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{rep.content}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 
 export default function CommunityTabScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAppSelector((state) => state.auth);
 
-  const [posts, setPosts] = useState<CommunityPost[]>(seedCommunityPosts);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedPostIds, setExpandedPostIds] = useState<Record<string, boolean>>({
-    'post-1': true,
-  });
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [category, setCategory] = useState(ALL_DISCUSSIONS);
+  const [expandedPostIds, setExpandedPostIds] = useState<Record<string, boolean>>({});
+  const [likeOverrides, setLikeOverrides] = useState<Record<string, number>>({});
+  const [likedPosts, setLikedPosts] = useState<Record<string, boolean>>({});
 
   // Reply Drafts
   const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
 
-  // Ask Question Modal State
+  // Create Post Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
-  const [newImageUri, setNewImageUri] = useState<string | null>(null);
+  const [newCategory, setNewCategory] = useState(postCategories[0]);
+  const [newImageUrl, setNewImageUrl] = useState('');
 
   // Image Zoom Lightbox
   const [zoomedImageUri, setZoomedImageUri] = useState<string | null>(null);
 
-  // Load from AsyncStorage
   useEffect(() => {
-    (async () => {
-      try {
-        const stored = await AsyncStorage.getItem(STORAGE_COMMUNITY_KEY);
-        if (stored) {
-          setPosts(JSON.parse(stored));
-        }
-      } catch {
-        // Fallback to seed posts
-      }
-    })();
-  }, []);
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  const savePosts = async (updated: CommunityPost[]) => {
-    setPosts(updated);
-    try {
-      await AsyncStorage.setItem(STORAGE_COMMUNITY_KEY, JSON.stringify(updated));
-    } catch {
-      // Ignore
-    }
+  const {
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useGetCommunityPostsQuery({
+    page: 1,
+    category: category === ALL_DISCUSSIONS ? undefined : category,
+    search: debouncedSearch,
+  });
+  const posts = data?.posts ?? [];
+
+  const [createPost, { isLoading: isPosting }] = useCreateCommunityPostMutation();
+  const [toggleLike] = useToggleCommunityLikeMutation();
+  const [createReply, { isLoading: isReplying }] = useCreateCommunityReplyMutation();
+
+  const requireSignIn = (message: string) => {
+    Toast.show({ type: 'info', text1: 'Sign In Required', text2: message });
+    router.push({ pathname: '/login', params: { redirect: '/(tabs)/community' } });
   };
-
-  const filteredPosts = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    if (!q) return posts;
-    return posts.filter((post) => {
-      return (
-        post.title.toLowerCase().includes(q) ||
-        post.content.toLowerCase().includes(q) ||
-        post.author.toLowerCase().includes(q)
-      );
-    });
-  }, [posts, searchQuery]);
 
   const toggleExpand = (postId: string) => {
     setExpandedPostIds((prev) => ({
@@ -91,53 +129,35 @@ export default function CommunityTabScreen() {
     }));
   };
 
-  const handleLike = (postId: string) => {
-    const updated = posts.map((p) =>
-      p.id === postId ? { ...p, likes: p.likes + 1 } : p
-    );
-    savePosts(updated);
-  };
-
-  const handlePickImage = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Toast.show({
-        type: 'error',
-        text1: 'Permission Needed',
-        text2: 'Photo library access is required to attach an image.',
-      });
+  const handleLike = async (postId: string, currentLikes: number) => {
+    if (!isAuthenticated || !user) {
+      requireSignIn('Please sign in to mark posts as helpful.');
       return;
     }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets && result.assets[0]) {
-      setNewImageUri(result.assets[0].uri);
+    try {
+      const updated = await toggleLike(postId).unwrap();
+      setLikeOverrides((prev) => ({ ...prev, [postId]: updated.likes }));
+      setLikedPosts((prev) => ({ ...prev, [postId]: updated.likes > currentLikes }));
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could Not Update',
+        text2: getApiErrorMessage(error, 'Please try again.'),
+      });
     }
   };
 
   const handleOpenAskModal = () => {
     if (!isAuthenticated || !user) {
-      Toast.show({
-        type: 'info',
-        text1: 'Sign In Required',
-        text2: 'Please sign in to post questions or share suggestions in the community.',
-      });
-      router.push({
-        pathname: '/login',
-        params: { redirect: '/(tabs)/community' },
-      });
+      requireSignIn('Please sign in to post questions or share suggestions in the community.');
       return;
     }
 
     setIsModalOpen(true);
   };
 
-  const handleSubmitPost = () => {
+  const handleSubmitPost = async () => {
+    if (isPosting) return;
     if (!newTitle.trim() || !newContent.trim()) {
       Toast.show({
         type: 'error',
@@ -146,79 +166,67 @@ export default function CommunityTabScreen() {
       });
       return;
     }
-
-    const newPost: CommunityPost = {
-      id: `post-${Date.now()}`,
-      author: user?.name || 'Anonymous User',
-      title: newTitle.trim(),
-      content: newContent.trim(),
-      category: 'Discussion',
-      topicTag: 'Discussion',
-      imageUrl: newImageUri || undefined,
-      createdAt: 'Just now',
-      likes: 1,
-      replies: [],
-    };
-
-    const updated = [newPost, ...posts];
-    savePosts(updated);
-
-    // Reset Form
-    setNewTitle('');
-    setNewContent('');
-    setNewImageUri(null);
-    setIsModalOpen(false);
-
-    Toast.show({
-      type: 'success',
-      text1: 'Post Published',
-      text2: 'Your post is now visible in the community.',
-    });
-  };
-
-  const handleAddReply = (postId: string) => {
-    if (!isAuthenticated || !user) {
+    const image = newImageUrl.trim();
+    if (image && !/^https:\/\//i.test(image)) {
       Toast.show({
-        type: 'info',
-        text1: 'Sign In Required',
-        text2: 'Please sign in to reply to community discussions.',
-      });
-      router.push({
-        pathname: '/login',
-        params: { redirect: '/(tabs)/community' },
+        type: 'error',
+        text1: 'Invalid Image Link',
+        text2: 'Image links must start with https://',
       });
       return;
     }
 
+    try {
+      await createPost({
+        title: newTitle.trim(),
+        content: newContent.trim(),
+        category: newCategory,
+        ...(image ? { image } : {}),
+      }).unwrap();
+
+      setNewTitle('');
+      setNewContent('');
+      setNewImageUrl('');
+      setIsModalOpen(false);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Post Submitted',
+        text2: 'Your post is waiting for moderator review.',
+      });
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could Not Post',
+        text2: getApiErrorMessage(error, 'Please try again.'),
+      });
+    }
+  };
+
+  const handleAddReply = async (postId: string) => {
+    if (!isAuthenticated || !user) {
+      requireSignIn('Please sign in to reply to community discussions.');
+      return;
+    }
+
     const text = (replyInputs[postId] || '').trim();
-    if (!text) return;
+    if (!text || isReplying) return;
 
-    const newReply: CommunityReply = {
-      id: `reply-${Date.now()}`,
-      author: user.name || 'Anonymous User',
-      content: text,
-      createdAt: 'Just now',
-      likes: 1,
-    };
-
-    const updated = posts.map((p) => {
-      if (p.id === postId) {
-        return {
-          ...p,
-          replies: [...p.replies, newReply],
-        };
-      }
-      return p;
-    });
-
-    savePosts(updated);
-    setReplyInputs((prev) => ({ ...prev, [postId]: '' }));
-
-    Toast.show({
-      type: 'success',
-      text1: 'Suggestion Shared',
-      text2: 'Thank you for replying.',
-    });
+    try {
+      await createReply({ postId, content: text }).unwrap();
+      setReplyInputs((prev) => ({ ...prev, [postId]: '' }));
+      Toast.show({
+        type: 'success',
+        text1: 'Reply Shared',
+        text2: 'Thank you for replying.',
+      });
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could Not Reply',
+        text2: getApiErrorMessage(error, 'Please try again.'),
+      });
+    }
   };
 
   return (
@@ -264,32 +272,81 @@ export default function CommunityTabScreen() {
             </TouchableOpacity>
           )}
         </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          className="mt-2.5"
+          contentContainerClassName="gap-2">
+          {communityCategories.map((item) => {
+            const active = item === category;
+            return (
+              <TouchableOpacity
+                key={item}
+                onPress={() => setCategory(item)}
+                className={`rounded-full border px-3 py-1.5 ${
+                  active ? 'border-forest bg-primary' : 'border-line bg-canvas'
+                }`}>
+                <Text className={`text-[11.5px] font-semibold ${active ? 'text-white' : 'text-ink-secondary'}`}>
+                  {item}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Posts List */}
       <ScrollView
         className="flex-1 px-5"
         contentContainerClassName="pb-16 pt-4 gap-4"
-        showsVerticalScrollIndicator={false}>
-        
-        {filteredPosts.length === 0 ? (
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isFetching && !isLoading}
+            onRefresh={() => { void refetch(); }}
+            tintColor="#2E5E52"
+          />
+        }>
+        {isLoading ? (
+          <ActivityIndicator size="large" color="#2E5E52" style={{ marginTop: 40 }} />
+        ) : isError ? (
+          <AppCard className="p-8 items-center text-center">
+            <Ionicons name="cloud-offline-outline" size={32} color="#A9524A" />
+            <Text className="mt-3 text-[16px] font-bold text-ink">Community unavailable</Text>
+            <Text className="mt-1 text-[12.5px] text-ink-secondary text-center">
+              Discussions could not be loaded right now.
+            </Text>
+            <TouchableOpacity
+              onPress={() => void refetch()}
+              className="mt-4 rounded-xl border border-line bg-surface px-4 py-2">
+              <Text className="text-[12px] font-semibold text-ink">Try again</Text>
+            </TouchableOpacity>
+          </AppCard>
+        ) : posts.length === 0 ? (
           <AppCard className="p-8 items-center text-center">
             <Ionicons name="search-outline" size={32} color="#9AA5A0" />
             <Text className="mt-3 text-[16px] font-bold text-ink">
               No discussions found
             </Text>
             <Text className="mt-1 text-[12.5px] text-ink-secondary text-center">
-              Try searching with different keywords.
+              {searchQuery || category !== ALL_DISCUSSIONS
+                ? 'Try a different search or category.'
+                : 'Be the first to start a discussion.'}
             </Text>
             <TouchableOpacity
-              onPress={() => setSearchQuery('')}
+              onPress={() => {
+                setSearchQuery('');
+                setCategory(ALL_DISCUSSIONS);
+              }}
               className="mt-4 rounded-xl border border-line bg-surface px-4 py-2">
               <Text className="text-[12px] font-semibold text-ink">Clear Search</Text>
             </TouchableOpacity>
           </AppCard>
         ) : (
-          filteredPosts.map((post) => {
+          posts.map((post) => {
             const isExpanded = !!expandedPostIds[post.id];
+            const likes = likeOverrides[post.id] ?? post.likes;
+            const isLiked = !!likedPosts[post.id];
             return (
               <AppCard key={post.id} className="p-4 bg-surface border-line">
                 {/* Header: Author & Time */}
@@ -304,7 +361,7 @@ export default function CommunityTabScreen() {
                       {post.author}
                     </Text>
                     <Text className="text-[11px] text-ink-tertiary">
-                      {post.createdAt}
+                      {formatPostDate(post.createdAt)} · {post.category}
                     </Text>
                   </View>
                 </View>
@@ -341,11 +398,11 @@ export default function CommunityTabScreen() {
                   <View className="flex-row items-center gap-2">
                     {/* Like Button */}
                     <TouchableOpacity
-                      onPress={() => handleLike(post.id)}
+                      onPress={() => void handleLike(post.id, likes)}
                       className="flex-row items-center gap-1.5 rounded-full bg-canvas border border-line px-3 py-1 active:bg-elevated">
-                      <Ionicons name="thumbs-up-outline" size={13} color="#2E5E52" />
+                      <Ionicons name={isLiked ? 'thumbs-up' : 'thumbs-up-outline'} size={13} color="#2E5E52" />
                       <Text className="text-[11.5px] font-bold text-forest">
-                        {post.likes} Helpful
+                        {likes} Helpful
                       </Text>
                     </TouchableOpacity>
 
@@ -355,7 +412,7 @@ export default function CommunityTabScreen() {
                       className="flex-row items-center gap-1 rounded-full bg-canvas border border-line px-3 py-1 active:bg-elevated">
                       <Ionicons name="chatbubble-outline" size={13} color="#6B7A75" />
                       <Text className="text-[11.5px] font-semibold text-ink-secondary">
-                        {post.replies.length} {post.replies.length === 1 ? 'Answer' : 'Answers'}
+                        {post.repliesCount} {post.repliesCount === 1 ? 'Answer' : 'Answers'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -377,27 +434,7 @@ export default function CommunityTabScreen() {
                 {/* Expandable Answers & Suggestion Thread */}
                 {isExpanded && (
                   <View className="mt-3.5 border-t border-line/60 pt-3">
-                    {post.replies.length > 0 && (
-                      <View className="gap-2.5 mb-3">
-                        {post.replies.map((rep) => (
-                          <View
-                            key={rep.id}
-                            className="rounded-2xl bg-canvas border border-line/70 p-3">
-                            <View className="flex-row items-center justify-between">
-                              <Text className="text-[12px] font-bold text-ink">
-                                {rep.author}
-                              </Text>
-                              <Text className="text-[10px] text-ink-tertiary">
-                                {rep.createdAt}
-                              </Text>
-                            </View>
-                            <Text className="mt-1 text-[12px] leading-relaxed text-ink-secondary">
-                              {rep.content}
-                            </Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
+                    <PostReplies postId={post.id} />
 
                     {/* Inline Reply Input Box */}
                     <View className="flex-row items-center gap-2 rounded-2xl bg-canvas border border-line p-1.5 pl-3">
@@ -411,7 +448,8 @@ export default function CommunityTabScreen() {
                         className="flex-1 text-[12px] text-ink font-medium"
                       />
                       <TouchableOpacity
-                        onPress={() => handleAddReply(post.id)}
+                        onPress={() => void handleAddReply(post.id)}
+                        disabled={isReplying}
                         style={{ backgroundColor: '#2E5E52' }}
                         className="rounded-xl px-3 py-2 shadow-xs active:opacity-90">
                         <Text className="text-[11.5px] font-bold text-white">
@@ -481,37 +519,63 @@ export default function CommunityTabScreen() {
                 className="h-28 rounded-2xl border border-line bg-canvas p-3.5 text-[13px] text-ink font-medium mb-3"
               />
 
-              {/* Image Attachment Picker */}
+              {/* Category */}
+              <Text className="text-[11.5px] font-bold uppercase tracking-wider text-sage mb-1.5">
+                Category
+              </Text>
+              <View className="flex-row flex-wrap gap-2 mb-3">
+                {postCategories.map((item) => {
+                  const active = item === newCategory;
+                  return (
+                    <TouchableOpacity
+                      key={item}
+                      onPress={() => setNewCategory(item)}
+                      className={`rounded-full border px-3 py-1.5 ${
+                        active ? 'border-forest bg-primary' : 'border-line bg-canvas'
+                      }`}>
+                      <Text className={`text-[11.5px] font-semibold ${active ? 'text-white' : 'text-ink-secondary'}`}>
+                        {item}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Optional image link (the community API accepts public image URLs only) */}
               <View className="mb-4">
                 <Text className="text-[11.5px] font-bold uppercase tracking-wider text-sage mb-1.5">
-                  Attach Image (Optional)
+                  Image Link (Optional)
                 </Text>
-                {newImageUri ? (
-                  <View className="relative overflow-hidden rounded-2xl border border-line">
-                    <Image source={{ uri: newImageUri }} className="h-36 w-full object-cover" />
-                    <TouchableOpacity
-                      onPress={() => setNewImageUri(null)}
-                      className="absolute top-2 right-2 h-7 w-7 items-center justify-center rounded-full bg-black/70">
-                      <Ionicons name="trash" size={14} color="#FFFFFF" />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    onPress={handlePickImage}
-                    className="flex-row items-center justify-center rounded-2xl border border-dashed border-line bg-canvas py-3.5 px-4 active:bg-elevated">
-                    <Ionicons name="image-outline" size={18} color="#2E5E52" />
-                    <Text className="ml-2 text-[12.5px] font-bold text-primary">
-                      Add a Photo / Illustration
-                    </Text>
-                  </TouchableOpacity>
+                <TextInput
+                  value={newImageUrl}
+                  onChangeText={setNewImageUrl}
+                  placeholder="https://example.com/image.jpg"
+                  placeholderTextColor="#9AA5A0"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  className="rounded-2xl border border-line bg-canvas px-3.5 py-2.5 text-[13px] text-ink font-medium"
+                />
+                {/^https:\/\//i.test(newImageUrl.trim()) && (
+                  <Image
+                    source={{ uri: newImageUrl.trim() }}
+                    className="mt-2 h-36 w-full rounded-2xl"
+                    resizeMode="cover"
+                  />
                 )}
               </View>
 
+              <Text className="text-[11.5px] leading-4 text-ink-tertiary mb-3">
+                Posts are reviewed by a moderator before they appear in the community.
+              </Text>
+
               {/* Submit Button */}
               <AppButton
-                onPress={handleSubmitPost}
+                onPress={() => void handleSubmitPost()}
+                loading={isPosting}
+                disabled={isPosting}
                 style={{ backgroundColor: '#2E5E52' }}>
-                Publish Post
+                Submit for Review
               </AppButton>
             </ScrollView>
           </View>

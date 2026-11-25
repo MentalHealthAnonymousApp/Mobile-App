@@ -2,9 +2,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+export interface PageMeta {
+  page?: number;
+  limit?: number;
+  total?: number;
+  totalPages?: number;
+}
+
 interface ApiEnvelope<T> {
   success?: boolean;
   message?: string;
+  meta?: PageMeta;
   data?: T;
 }
 
@@ -140,11 +148,11 @@ async function refreshAccessToken(): Promise<string | null> {
   return accessToken;
 }
 
-export async function backendRequest<T>(
+async function sendBackendRequest<T>(
   path: string,
-  init: RequestInit = {},
-  requiresAuth = false
-): Promise<T> {
+  init: RequestInit,
+  requiresAuth: boolean
+): Promise<ApiEnvelope<T>> {
   let accessToken = requiresAuth ? await getStoredValue(ACCESS_TOKEN_KEY) : null;
   if (requiresAuth && !accessToken) {
     accessToken = await refreshAccessToken();
@@ -168,10 +176,79 @@ export async function backendRequest<T>(
       response.status
     );
   }
+  return envelope;
+}
+
+export async function backendRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  requiresAuth = false
+): Promise<T> {
+  const envelope = await sendBackendRequest<T>(path, init, requiresAuth);
   if (envelope.data === undefined) {
     throw new BackendApiError('The API response did not contain the expected data.', 502);
   }
   return envelope.data;
+}
+
+export async function backendPage<T>(
+  path: string,
+  init: RequestInit = {},
+  requiresAuth = false
+): Promise<{ data: T[]; meta: PageMeta }> {
+  const envelope = await sendBackendRequest<T[]>(path, init, requiresAuth);
+  if (!Array.isArray(envelope.data)) {
+    throw new BackendApiError('The API response did not contain the expected data.', 502);
+  }
+  return { data: envelope.data, meta: envelope.meta ?? {} };
+}
+
+/** For endpoints that only confirm an action and may not return data. */
+export async function backendAction(
+  path: string,
+  init: RequestInit = {},
+  requiresAuth = false
+): Promise<string | undefined> {
+  const envelope = await sendBackendRequest<unknown>(path, init, requiresAuth);
+  return envelope.message;
+}
+
+const jsonPost = (body: unknown): RequestInit => ({
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await backendAction('auth/forget-password', jsonPost({ email }));
+}
+
+export async function resendPasswordResetCode(email: string): Promise<void> {
+  await backendAction('auth/resend-reset-code', jsonPost({ email }));
+}
+
+export async function verifyPasswordResetCode(email: string, resetCode: string): Promise<void> {
+  await backendAction('auth/verify-reset-otp', jsonPost({ email, resetCode: Number(resetCode) }));
+}
+
+export async function resetPassword(
+  email: string,
+  password: string,
+  confirmPassword: string
+): Promise<void> {
+  await backendAction('auth/reset-password', jsonPost({ email, password, confirmPassword }));
+}
+
+export async function changePassword(
+  oldPassword: string,
+  newPassword: string,
+  confirmNewPassword: string
+): Promise<void> {
+  await backendAction(
+    'auth/change-password',
+    jsonPost({ oldPassword, newPassword, confirmNewPassword }),
+    true
+  );
 }
 
 export async function authenticateUser(email: string, password: string) {

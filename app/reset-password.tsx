@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AppButton } from '@/components/ui/shared/AppButton';
 import Toast from 'react-native-toast-message';
+import { resetPassword } from '@/utils/backendApi';
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function ResetPasswordScreen() {
   const [errors, setErrors] = useState<{ password?: string; confirmPassword?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (isLoading) return;
 
     const nextErrors: typeof errors = {};
@@ -60,16 +61,34 @@ export default function ResetPasswordScreen() {
     Keyboard.dismiss();
     setIsLoading(true);
 
-    setTimeout(() => {
+    if (!email) {
       setIsLoading(false);
+      Toast.show({
+        type: 'error',
+        text1: 'Reset Link Expired',
+        text2: 'Start the password reset again from the sign-in screen.',
+      });
+      router.replace('/forgot-password');
+      return;
+    }
+
+    try {
+      await resetPassword(email, password, confirmPassword);
       Toast.show({
         type: 'success',
         text1: 'Password Updated',
         text2: 'Your new password has been saved. Please sign in.',
       });
-
       router.replace('/login');
-    }, 600);
+    } catch (resetError) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could Not Reset Password',
+        text2: resetError instanceof Error ? resetError.message : 'Please try again.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
