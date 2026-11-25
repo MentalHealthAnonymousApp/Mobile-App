@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Mental Health Anonymous",
+    "slug": "mental-health-anonymous",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/app-icon.png",
+    "scheme": "mentalhealth",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/app-icon.png",
+        "backgroundColor": "#F5F6F2"
+      },
+      "package": "com.devsmanik.mentalhealthanonymous"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/app-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F5F6F2"
+        }
+      ],
+      "expo-status-bar",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a386693b-cbf9-470a-8a16-3fa5a15aefde"
+      }
+    }
+  }
+}

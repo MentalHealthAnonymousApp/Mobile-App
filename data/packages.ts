@@ -1,0 +1,57 @@
+import type { PackageTier } from '@/types';
+
+export const PACKAGES: PackageTier[] = [
+  {
+    id: 'basic',
+    name: 'Basic',
+    price: 49,
+    currency: 'USD',
+    badge: 'Single Send',
+    popular: false,
+    tagline: 'Send an anonymous message anytime.',
+    description: 'A one-time message dispatch for urgent or discreet moments of care.',
+    features: [
+      'Can send 1 anonymous message anytime (24/7)',
+      'Sender identity is not included in the delivered message',
+      'Recipient contact details are stored in service records',
+      'Delivery via Email',
+    ],
+    ctaLabel: 'Select Basic · $49',
+  },
+  {
+    id: 'standard',
+    name: 'Standard',
+    price: 79,
+    currency: 'USD',
+    badge: 'Most Popular',
+    popular: true,
+    tagline: 'Send an anonymous message + attach resources.',
+    description: 'Combines a personalized anonymous message with access to vetted clinical toolkits and grounding exercises.',
+    features: [
+      'Can send 1 anonymous message anytime',
+      'Attach clinically vetted educational resources',
+      'Curated guides (Anxiety, Depression, Burnout, Grief, Sleep)',
+      'Sender identity is not included in the delivered message',
+      'Delivery via Email or SMS',
+    ],
+    ctaLabel: 'Select Standard · $79',
+  },
+  {
+    id: 'premium',
+    name: 'Premium',
+    price: 149,
+    currency: 'USD',
+    badge: 'Expert Guided',
+    popular: false,
+    tagline: 'Anonymous message + resources + consultation with Dr. Skelton.',
+    description: 'The highest tier of comprehensive care: an anonymous message with clinical toolkits, plus a 1-on-1 consultation session with Dr. Skelton.',
+    features: [
+      'Can send 1 anonymous message with full resources',
+      '1-on-1 personal consultation session with Dr. Skelton',
+      'Personalized guidance on supporting your loved one',
+      'Sender identity is not included in the delivered message',
+      'Delivery via Email or SMS',
+    ],
+    ctaLabel: 'Select Premium · $149',
+  },
+];
